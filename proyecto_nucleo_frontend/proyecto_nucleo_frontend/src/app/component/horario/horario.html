@@ -1,0 +1,157 @@
+<div class="page">
+  <h2>Horario semanal</h2>
+  @if (puedeEditar) {
+    <section class="filtros">
+      <div class="pildoras">
+        <button type="button" class="pildora" [class.activa]="!filtroSemestre" (click)="elegirSemestre(filtroSemestre)">
+          Todos
+        </button>
+        @for (n of semestres; track n) {
+          <button type="button" class="pildora" [class.activa]="filtroSemestre === n" (click)="elegirSemestre(n)">
+            Semestre {{ n }}
+          </button>
+        }
+      </div>
+
+      <div class="selectores">
+        <select [ngModel]="filtroCurso" (ngModelChange)="filtroCurso = $event; aplicarFiltros()">
+          <option [ngValue]="0">Todas las materias</option>
+          @for (c of cursosDelFiltro; track c.id) {
+            <option [ngValue]="c.id">{{ c.nombre }}</option>
+          }
+        </select>
+
+        <select [ngModel]="filtroDocente" (ngModelChange)="filtroDocente = $event; aplicarFiltros()">
+          <option [ngValue]="0">Todos los docentes</option>
+          @for (d of docentes; track d.id) {
+            <option [ngValue]="d.id">{{ d.nombre }}</option>
+          }
+        </select>
+
+        <select [ngModel]="filtroAula" (ngModelChange)="filtroAula = $event; aplicarFiltros()">
+          <option [ngValue]="0">Todas las aulas</option>
+          @for (a of aulas; track a.id) {
+            <option [ngValue]="a.id">{{ a.nombre }}</option>
+          }
+        </select>
+
+        @if (hayFiltros) {
+          <button type="button" class="secundario" (click)="limpiarFiltros()">Limpiar filtros</button>
+        }
+        <span class="contador">Mostrando {{ visibles }} de {{ sesiones.length }} sesiones</span>
+      </div>
+    </section>
+  }
+  @if (puedeEditar) {
+    <section class="panel-grupos">
+      <div class="panel-cab">
+        <h3>Grupos por programar</h3>
+        <label>Aula para sesiones nuevas
+          <select [(ngModel)]="aulaElegida">
+            <option [ngValue]="0">Automática (la que mejor encaje)</option>
+            @for (a of aulas; track a.id) {
+              <option [ngValue]="a.id">{{ a.nombre }}</option>
+            }
+          </select>
+        </label>
+      </div>
+      <div class="chips">
+        @for (p of pendientes; track p.grupo.id) {
+          <div class="chip" draggable="true"
+               (dragstart)="iniciarArrastreGrupo($event, p.grupo)"
+               (dragend)="finArrastre()">
+            <strong>{{ nombreGrupo(p.grupo.id!) }}</strong>
+            <span>{{ docenteDelGrupo(p.grupo.id) }}</span>
+            <small>{{ p.faltan }} sesión(es) por programar</small>
+          </div>
+        } @empty {
+          <p class="vacio">No hay grupos abiertos con sesiones pendientes.</p>
+        }
+      </div>
+    </section>
+
+    <form class="form" (ngSubmit)="guardar()">
+      <select name="grupoId" [(ngModel)]="form.grupoId">
+        <option [ngValue]="0">-- Grupo --</option>
+        @for (g of grupos; track g.id) {
+          <option [ngValue]="g.id">{{ nombreGrupo(g.id!) }}</option>
+        }
+      </select>
+
+      <span class="docente-auto">Docente: {{ docenteDelGrupo(form.grupoId) }}</span>
+
+      <select name="aulaId" [(ngModel)]="form.aulaId">
+        <option [ngValue]="0">-- Aula --</option>
+        @for (a of aulas; track a.id) {
+          <option [ngValue]="a.id">{{ a.nombre }}</option>
+        }
+      </select>
+
+      <select name="dia" [(ngModel)]="form.diaSemana">
+        @for (d of dias; track d) {
+          <option [value]="d">{{ d }}</option>
+        }
+      </select>
+
+      <input name="horaInicio" type="time" [(ngModel)]="form.horaInicio" />
+      <input name="horaFin" type="time" [(ngModel)]="form.horaFin" />
+
+      <button type="button" class="secundario" (click)="validar()">Validar</button>
+      <button type="submit">{{ editandoId != null ? 'Mover / actualizar' : 'Asignar' }}</button>
+      @if (editandoId != null) {
+        <button type="button" class="secundario" (click)="cancelar()">Cancelar</button>
+      }
+    </form>
+  }
+
+  @if (mensaje) { <p class="ok">{{ mensaje }}</p> }
+  @if (error) { <p class="error">{{ error }}</p> }
+
+  <div class="grilla-wrap">
+    <table class="grilla">
+      <thead>
+      <tr>
+        <th>Hora</th>
+        @for (d of dias; track d) { <th>{{ d }}</th> }
+      </tr>
+      </thead>
+      <tbody>
+        @for (h of horas; track h) {
+          <tr [class.almuerzo]="esAlmuerzo(h)">
+            <th>{{ h }}</th>
+            @for (d of dias; track d) {
+              <td
+                [class.hover]="celdaHover === d + h"
+                (dragover)="sobreCelda($event, d, h)"
+                (dragleave)="celdaHover = ''"
+                (drop)="soltar($event, d, h)">
+                @for (s of sesionesEn(d, h); track s.id) {
+                  <div class="sesion" [class.editable]="puedeEditar"
+                       [style.border-left-color]="colorSemestre(s.grupoId) || null"
+                       [class.arrastrando]="arrastrando?.id === s.id"
+                       [draggable]="puedeEditar"
+                       (dragstart)="iniciarArrastre($event, s)"
+                       (dragend)="finArrastre()"
+                       (click)="editar(s)">
+                    <strong>{{ nombreGrupo(s.grupoId) }}</strong>
+                    <span>{{ nombreDocente(s.docenteId) }}</span>
+                    <span>{{ nombreAula(s.aulaId) }}</span>
+                    <small>{{ hhmm(s.horaInicio) }} - {{ hhmm(s.horaFin) }}</small>
+                    @if (puedeEditar) {
+                      <button type="button" class="peligro mini"
+                              (click)="eliminar(s); $event.stopPropagation()">x</button>
+                    }
+                  </div>
+                }
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (puedeEditar) {
+    <p class="ayuda">Arrastra un grupo de arriba a la grilla para programarlo, o mueve una sesión a otra celda. Haz clic en una sesión para editarla.</p>
+  }
+</div>
